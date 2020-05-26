@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon May 25 18:51:53 2020
+
+@author: ghiggi
+"""
+
+def residual_block(inputs, filters, strides=1):
+    """Residual block
+    
+    Shortcut after Conv2D -> ReLU -> BatchNorm -> Conv2D
+    
+    Arguments:
+        inputs (tensor): input
+        filters (int): Conv2D number of filterns
+        strides (int): Conv2D square stride dimensions
+
+    Returns:
+        x (tensor): input Tensor for the next layer
+    """
+    y = inputs # Shortcut path
+    
+    # Main path
+    x = Conv2D(
+        filters=filters,
+        kernel_size=3,
+        strides=strides,
+        padding='same',
+    )(inputs)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    
+    x = Conv2D(
+        filters=filters,
+        kernel_size=3,
+        strides=1,
+        padding='same',
+    )(x)
+    x = BatchNormalization()(x)
+    
+    # Fit shortcut path dimenstions
+    if strides > 1:
+        y = Conv2D(
+        filters=filters,
+        kernel_size=3,
+        strides=strides,
+        padding='same',
+        )(y)
+        y = BatchNormalization()(y)
+    
+    # Concatenate paths
+    x = Add()([x, y])
+    x = Activation('relu')(x)
+    
+    return x
+
+
+
+# Stack residual blocks
+# stages (1D list): list of number of residual block in each stage eg. [2, 5, 5, 2]
+for stage in stages:
+    x = residual_block(x, filters, strides=2)
+    for i in range(stage-1):
+        x = residual_block(x, filters)
+    filters *= 2
+    
+    
+def resnet(input_shape, num_classes, filters, stages):
+    """ResNet 
+    
+    At the beginning of each stage downsample feature map size 
+    by a convolutional layer with strides=2, and double the number of filters.
+    The kernel size is the same for each residual block.
+    
+    Arguments:
+        input_shape (3D tuple): shape of input Tensor
+        filters (int): Conv2D number of filterns
+        stages (1D list): list of number of resiual block in each stage eg. [2, 5, 5, 2]
+    
+    Returns:
+        model (Model): Keras model
+    """
+    # Start model definition
+    inputs = Input(shape=input_shape)
+    x = Conv2D(
+        filters=filters,
+        kernel_size=7,
+        strides=1,
+        padding='same',
+    )(inputs)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    
+    # Stack residual blocks
+    for stage in stages:
+        x = residual_block(x, filters, strides=2)
+        for i in range(stage-1):
+            x = residual_block(x, filters)
+        filters *= 2
+        
+    # Pool -> Flatten -> Classify
+    x = AveragePooling2D(4)(x)
+    x = Flatten()(x)
+    x = Dropout(0.3)(x)
+    x = Dense(int(filters/4), activation='relu')(x)
+    outputs = Dense(num_classes, activation='softmax')(x)
+    
+    # Instantiate model
+    model = Model(inputs=inputs, outputs=outputs)
+return model

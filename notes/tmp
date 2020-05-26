@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun May 24 16:41:21 2020
+
+@author: ghiggi
+"""
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import scipy as sp
+import numpy as np
+import pandas as pd
+import skimage as ski
+import skimage.morphology as skim
+import skimage.transform as skit
+from skimage.measure import find_contours as skif
+import scipy.ndimage as ndi
+import cv2
+import av
+from keras.preprocessing.image import ImageDataGenerator
+import copy
+
+
+from numpy import mean
+from numpy import std
+from matplotlib import pyplot
+from sklearn.model_selection import KFold
+from keras.datasets import mnist
+from keras.utils import to_categorical
+from keras.models import Sequential
+from keras.layers import Conv2D
+from keras.layers import MaxPooling2D
+from keras.layers import Dense
+from keras.layers import Flatten
+from keras.optimizers import SGD
+from keras.layers import BatchNormalization
+
+# load train and test dataset
+def load_dataset():
+	# load dataset
+	(trainX, trainY), (testX, testY) = mnist.load_data()
+	# reshape dataset to have a single channel
+	trainX = trainX.reshape((trainX.shape[0], 28, 28, 1))
+	testX = testX.reshape((testX.shape[0], 28, 28, 1))
+	# one hot encode target values
+	trainY = to_categorical(trainY)
+	testY = to_categorical(testY)
+	return trainX, trainY, testX, testY
+
+# define cnn model
+def define_model():
+	model = Sequential()
+	model.add(Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_uniform', input_shape=(28, 28, 1)))
+	model.add(BatchNormalization())
+	model.add(MaxPooling2D((2, 2)))
+	model.add(Flatten())
+	model.add(Dense(100, activation='relu', kernel_initializer='he_uniform'))
+	model.add(BatchNormalization())
+	model.add(Dense(10, activation='softmax'))
+	# compile model
+	opt = SGD(lr=0.01, momentum=0.9)
+	model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
+	return model
+
+
+
+# run the test harness for evaluating a model
+def run_test_harness():
+	# load dataset
+	trainX, trainY, testX, testY = load_dataset()
+	# prepare pixel data
+	trainX, testX = prep_pixels(trainX, testX)
+	# evaluate model
+	scores, histories = evaluate_model(trainX, trainY)
+	# learning curves
+	summarize_diagnostics(histories)
+	# summarize estimated performance
+	summarize_performance(scores)
