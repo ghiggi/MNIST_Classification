@@ -171,10 +171,15 @@ def object_extraction(image, image_labels, patch_size=28):
     return obj_dict
 
 #%% Image thresholding
-def image_thresholding(images, threshold=0.5):
+def image_thresholding(images, threshold=0.5, invert=False):
+    # invert=False --> below threshold set to 1, above threshold set to 0 
+    # invert=True --> below threshold set to 0, above threshold set to 1
     if (images.ndim == 3):
         images = np.expand_dims(images, axis=3)
-    binary_images = images[:,:,:,0] < threshold   
+    if invert is False:
+        binary_images = images[:,:,:,0] < threshold   
+    else:
+        binary_images = images[:,:,:,0] > threshold   
     binary_images = binary_images.astype(np.uint8) 
     return(binary_images)
   
@@ -224,18 +229,19 @@ def add_minus_sign(obj_dict):
     return(obj_dict)
 
 #%% Data Augmentation of Operators
-def DataAugmentation(images, labels, n, subset_labels, rotation=False, include_original=False, plot=False):
+def DataAugmentation(images, labels, n, subset_labels=None, rotation=False, include_original=False, plot=False):
     #%% Check image is rank 4 for compatibility with datagen.flow
     if (images.ndim == 3):
         images = np.expand_dims(images, axis=3)
     #%% Subset images to DataAugment
-    idx_operators = [label in subset_labels for label in labels]
-    images = images[idx_operators,:,:,:]
-    labels = np.asarray(labels)
-    labels = labels[np.where(idx_operators)[0]]
+    if (subset_labels is not None):
+        idx_operators = [label in subset_labels for label in labels]
+        images = images[idx_operators,:,:,:]
+        labels = np.asarray(labels)
+        labels = labels[np.where(idx_operators)[0]]
     #%% Data generation settings
     if rotation is False:
-       rotation_range = 20
+       rotation_range = 10
     else:
        rotation_range=180
     batch_size=1
@@ -243,10 +249,10 @@ def DataAugmentation(images, labels, n, subset_labels, rotation=False, include_o
         featurewise_center=False,
         featurewise_std_normalization=False,
         rotation_range=rotation_range,
-        width_shift_range=0.3,
-        height_shift_range=0.3,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
         horizontal_flip=False,
-        zoom_range=0.3)
+        zoom_range=0.2)
     #%% Create the iterator
     datagen_iter = datagen.flow(x=images,y=np.asarray(labels),batch_size=batch_size)
     #%% Initialize 
@@ -285,7 +291,7 @@ def load_mnist_data():
     labels = np.concatenate((trainY,testY), axis=0)
     images = images.astype('float32')
     images = images / 255.0
-    images = image_thresholding(images, 0.3)
+    images = image_thresholding(images, 0.3, invert=True)
     images = np.expand_dims(np.asarray(images), axis=3)
     return images, labels
 

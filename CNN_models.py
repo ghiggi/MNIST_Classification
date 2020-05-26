@@ -5,7 +5,6 @@ Created on Mon May 25 14:26:26 2020
 
 @author: ghiggi
 """
-
 import matplotlib.pyplot as plt
 import numpy as np 
 from sklearn.model_selection import KFold, StratifiedKFold
@@ -129,16 +128,16 @@ def cv_evaluation(model, dataX, dataY, n_folds=5):
         histories.append(history)
     
     return scores, histories
-
+  
 #%% Plot diagnostic learning curves      
-def display_training_curves(training, 
-                            validation, 
-                            ylabel,
-                            subplot = None,
-                            ax = None, 
-                            xlabel='Epoch',
-                            title='', 
-                            legend=['Training','Validation']):
+def plot_learning_curve(training, 
+                        validation, 
+                        ylabel,
+                        subplot = None,
+                        ax = None, 
+                        xlabel='Epoch',
+                        title='', 
+                        legend=['Training','Validation']):
     # training, validation must be keras history objects 
     if subplot is not None:
         ax = plt.subplot(subplot)
@@ -152,12 +151,14 @@ def display_training_curves(training,
     ax.set_ylabel(ylabel)
     ax.set_xlabel('Epoch')
     ax.legend(legend, loc='upper left')
+    return None
   
 # %% Plot for confusion matrix 
 def plot_confusion_matrix(y_true, y_pred, classes,
                           normalize=False,
                           title=None,
-                          cmap=plt.cm.Blues):
+                          cmap=plt.cm.Blues,
+                          verbose=False):
     """
     This function prints and plots the confusion matrix.
     Normalization can be applied by setting `normalize=True`.
@@ -168,18 +169,21 @@ def plot_confusion_matrix(y_true, y_pred, classes,
         else:
             title = 'Confusion matrix, without normalization'
 
-    # Compute confusion matrix
+    #%% Compute confusion matrix
     cm = confusion_matrix(y_true, y_pred)
+    
     # Only use the labels that appear in the data
     # classes = classes[unique_labels(y_true, y_pred)]
+    #%% Normalization option
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        print("Normalized confusion matrix")
+        print("Plotting a normalized confusion matrix")
     else:
-        print('Confusion matrix, without normalization')
-
-    print(cm)
-
+        print('Plotting a confusion matrix, without normalization')
+    #%% Print confusion matrix 
+    if verbose is True:
+        print(cm)
+    #%% Create the figure 
     fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
     ax.figure.colorbar(im, ax=ax)

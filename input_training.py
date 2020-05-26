@@ -5,7 +5,11 @@ Created on Tue May 12 10:20:49 2020
 
 @author: feldmann
 """
+#%% Set working directory
 import os 
+# proj_path = "/home/ghiggi/Image-analysis-and-pattern-recognition/Gionata/project"
+proj_path = "/home/ghiggi/Documents/MNIST_Classification"
+os.chdir(proj_path)
 
 #%% Import packages
 import matplotlib.pyplot as plt
@@ -13,22 +17,22 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 
+from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import to_categorical # One hot encoding 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 #%% Set project directories 
-proj_path = "/home/ghiggi/Image-analysis-and-pattern-recognition/Gionata/project"
-models_folder_path = "/home/ghiggi/Image-analysis-and-pattern-recognition/Common/data/models"
-os.chdir(proj_path)
+data_folder_path = os.path.join(proj_path,'data')
+models_folder_path = os.path.join(proj_path,'models')
+# models_folder_path = '../models'
+# data_folder_path ='../data/'
+
 #%% Import functions
 import feat_ext
 import CNN_models
-
-#%% Define data path
-data_folder_path='/home/ghiggi/Image-analysis-and-pattern-recognition/Gionata/data'
-# path='../data/'
-filename='robot_parcours_1.avi'
-
+from CNN_models import plot_learning_curve
+from CNN_models import plot_confusion_matrix
 #%% Read video, extract first frame
+filename='robot_parcours_1.avi'
 image, video= feat_ext.read_video(data_folder_path,filename)
 # plt.imshow(image)
 
@@ -51,10 +55,10 @@ obj_dict['binary_patches'] = feat_ext.image_thresholding(obj_dict['patches'])
 
 #%% Define operator dictionary
 operator_dict = {'+': 9, 
-                 '-': 10, # set to 1 if rotation invariant 
-                 '*': 11,
-                 ':': 12,
-                 '=': 13}
+                 '-': 1, # set to 1 if the model must be rotation invariant 
+                 '*': 10,
+                 ':': 11,
+                 '=': 12}
 
 ############################# 
 ## Code for training CNN ####
@@ -65,7 +69,7 @@ obj_dict = feat_ext.add_minus_sign(obj_dict)
 #%% Data augmentation of operators 
 images_op, labels_op = feat_ext.DataAugmentation(images=obj_dict['binary_patches'], 
                                                  labels=obj_dict['labels'],
-                                                 subset_labels = ['*','=',':','-'],
+                                                 subset_labels = list(operator_dict.keys()),
                                                  n=20000,
                                                  rotation = False, 
                                                  include_original = False,
@@ -82,42 +86,42 @@ images_digits, labels_digits = feat_ext.DataAugmentation(images=obj_dict['binary
 #%% Load MNIST digits 
 images_mnist, labels_mnist = feat_ext.load_mnist_data()
 labels_mnist[labels_mnist == 9] = 6
-
+labels_mnist = labels_mnist.astype('<U1')
 #%% Combine MNIST and OPERATORS 
 images_all = np.concatenate((images_mnist, images_op),axis=0)
 labels_all = np.concatenate((labels_mnist, labels_op),axis=0)
-
+images_all = images_all.astype('float32')
+labels_all = labels_all.astype('int16')
 # Encoder categories 
 # from sklearn.preprocessing import LabelEncoder
 # LE_mnist = LabelEncoder()
 # LE_mnist.fit(labels_mnist)
 # list(LE_mnist.classes_)
  
-# Assume integers from 0 to num_classes 
-labels_mnist_Y = to_categorical(labels_mnist)
-labels_op_Y = to_categorical(labels_op)
-labels_all_Y = to_categorical(labels_all)
-
 #%% Create train and test set (random split)
-X_train, X_test, Y_train, Y_test = train_test_split(images_all,labels_all_Y,
+X_train, X_test, Y_train_labels, Y_test_labels = train_test_split(images_all,labels_all,
                                                     test_size = 0.2,
                                                     shuffle = True,
                                                     random_state=42)
 #%% Create train and test set (class-stratified split)
-X_train, X_test, Y_train, Y_test = train_test_split(images_all,labels_all_Y,
-                                                    test_size = 0.2,
-                                                    shuffle = True,
-                                                    stratify = labels_all,
-                                                    random_state=42)                                                
+X_train, X_test, Y_train_labels, Y_test_labels = train_test_split(images_all,labels_all,
+                                                                  test_size = 0.2,
+                                                                  shuffle = True,
+                                                                  stratify = labels_all,
+                                                                  random_state=42)   
+#%% One Hot Encoding Labels
+# - Assume integers from 0 to num_classes 
+Y_train_OHE = to_categorical(Y_train_labels)
+Y_test_OHE = to_categorical(Y_test_labels)                                          
 #%% Train MNIST+operator models 
 # Load models 
-model = CNN_models.CNN4(14)
+model = CNN_models.CNN4(13)
 model.summary()
 # Training options 
 n_epochs = 1 # 15  
 batch_size = 32
 validation_split = 0.33
-history = model.fit(X_train, Y_train,
+history = model.fit(X_train, Y_train_OHE,
                     epochs = n_epochs,
                     batch_size = batch_size, 
                     validation_split = validation_split,
@@ -128,67 +132,75 @@ history = model.fit(X_train, Y_train,
 # - rotated images 
 # - batch ... class stratified ... 
 
+## learning rate scheduling 
+## tensoarboard
+## callbacks
+## compute other metrics 
+
+## Compute loss function for each single obs 
+## Display worst loss & gradient 
+
 #%% Save the model 
 model_name = 'final_model.h5'
 classifier_path = os.path.join(models_folder_path,model_name)
 model.save(classifier_path) 
-        
+
+#%% Load the model 
+model = load_model(classifier_path)
+            
 #%% Evaluation on test set 
-model.predict_classes(np.expand_dims(obj_dict['binary_patches'], axis=3))   
-digit = model.predict_classes(images_mnist[0:2,:,:,:])
-digit2 = model.predict_proba(images_mnist[0:2,:,:,:])
-y_pred = model.predict_classes(images_all)
+print(model.predict_classes(np.expand_dims(obj_dict['binary_patches'], axis=3)))
+Y_train_labels_pred = np.argmax(model.predict(X_train), axis=-1)   
+Y_test_labels_pred = np.argmax(model.predict(X_test), axis=-1)  
 
 #%% Plot diagnostic learning curves 
-plt.subplots(figsize=(10,10))
-plt.tight_layout()
-display_training_curves(history.history['accuracy'],
-                        history.history['val_accuracy'], 
-                        ylabel='Cross Entropy Loss', 
-                        subplot=211)
-display_training_curves(history.history['loss'], 
-                        history.history['val_loss'], 
-                        ylabel='Loss',
-                        suplot=212)
-
 fig, axarr = plt.subplots(1, 2, figsize=(16, 8))
-display_training_curves(history.history['accuracy'],
-                        history.history['val_accuracy'], 
-                        ylabel='Classification Accuracy', 
-                        ax = axarr[0])
-display_training_curves(history.history['loss'], 
-                        history.history['val_loss'], 
-                        ylabel='Loss',
-                        ax=axarr[1])
+plot_learning_curve(history.history['accuracy'],
+                    history.history['val_accuracy'], 
+                    ylabel='Classification Accuracy', 
+                    ax = axarr[0])
+plot_learning_curve(history.history['loss'], 
+                    history.history['val_loss'], 
+                    ylabel='Loss',
+                    ax=axarr[1])
 plt.show()
 
 # %% Plot confusion matrix 
-# score = model.evaluate(x_test, y_test, verbose=0)
-CNN_models.plot_confusion_matrix(y_true = labels_all, 
-                                 y_pred = y_pred, 
-                                 classes = np.unique(labels_all),
-                                 normalize=False,
-                                 title=None,
-                                 cmap=plt.cm.Blues)
-
 np.set_printoptions(precision=2)
-# Plot non-normalized confusion matrix
-plot_confusion_matrix(y_test, y_pred, classes=class_names,
-                      title='Confusion matrix, without normalization')
-
-# Plot normalized confusion matrix
-plot_confusion_matrix(y_test, y_pred, classes=class_names, normalize=True,
-                      title='Normalized confusion matrix')
-
+plot_confusion_matrix(y_true = Y_test_labels, 
+                      y_pred = Y_test_labels_pred,
+                      classes = np.unique(Y_train_labels),
+                      normalize=False,
+                      title='Confusion matrix without normalization',
+                      cmap=plt.cm.Blues)
 plt.show()
-         
+
+plot_confusion_matrix(y_true = Y_test_labels, 
+                      y_pred = Y_test_labels_pred,
+                      classes = np.unique(Y_train_labels),
+                      normalize=True,
+                      title='Normalized confusion matrix',
+                      cmap=plt.cm.Blues)
+ 
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
 # %% Plot architecture 
-from keras.utils import plot_model
-simple_architecture = plot_model(model, 
-                                 show_shapes=True, 
-                                 show_layer_names=False)
-simple_architecture.width = 600
-simple_architecture
+# from tensorflow.keras.utils import plot_model
+# simple_architecture = plot_model(model, 
+#                                  show_shapes=True, 
+#                                  show_layer_names=False)
+# simple_architecture.width = 600
+# simple_architecture
 
 
 
