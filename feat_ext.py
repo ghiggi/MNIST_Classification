@@ -3,7 +3,7 @@
 """
 Created on Tue May 12 10:21:03 2020
 
-@author: feldmann
+@author: GHIGGI
 """
 #%% FUNCTIONS FOR MAIN AND TRAINING FILES
 import os
@@ -22,9 +22,9 @@ def read_video(path, file):
     for packet in video_container.demux():
         for frame in packet.decode():
             img=frame.to_image()
-            video.append(np.asarray(img))
-            
+            video.append(np.asarray(img))   
     image=video[0]
+    video = np.asarray(video)
     return image, video
 
 #%% Identifying biggest object in image
@@ -50,6 +50,21 @@ def mask_centroid(image, c_y, c_x, size):
     mask[y_l:y_u,x_l:x_u]=0
     return mask
 
+#%% Retrieve arrow centroid
+def getPositionArrow(image):
+    red_blue_ratio = image[:,:,0]/image[:,:,2]
+    image_red = np.asarray([red_blue_ratio>2])[0,:,:]
+    y,x,c_y,c_x = biggest_object(image_red)    
+    return int(c_y),int(c_x)
+
+#%% Retrieve robot tracks
+def get_robot_tracks(video):
+    tracks = []
+    for frame in np.arange(np.size(video,0)):
+        tracks.append(getPositionArrow(video[frame,:,:,:])) 
+    return(tracks)
+
+
 #%% Remove arrow
 def remove_arrow(image):
     # Filter arrow
@@ -62,6 +77,7 @@ def remove_arrow(image):
     image_r_filt = [image[:,:,0]<100]*mask_arrow
     # plt.imshow(image_r_filt[0,:,:])
     return(image_r_filt)
+
 
 #%% Object identification and size filtering -> discard objects below/above certain size
 def size_filtered_object(image, low, hi):
@@ -124,10 +140,45 @@ def object_labeling(image):
     
 
 #%% Object identification, extract features around centroids of objects, extract properties
+from skimage import exposure   # contrast scaling histogram 
+from skimage.color import rgb2gray
+from skimage.filters import median as median_filter
+from skimage.morphology import disk
+from skimage.morphology import binary_dilation
+from skimage.transform import resize
+def process_object_patch(img, patch_size):
+    # Convert to gray scale
+    img = rgb2gray(img)
+    
+    # Contrast stretching
+    p2, p98 = np.percentile(img, (2, 98))
+    img = exposure.rescale_intensity(img, in_range=(p2, p98))
+    # plt.imshow(img)
+    # plt.show()
+    
+    # Thresholding 
+    img = image_thresholding(img, 0.2, invert=True)
+    # plt.imshow(img[0,:,:])
+    # plt.show()
+    
+    # Thick the digits by dilation 
+    img = binary_dilation(img[0,:,:], disk(1))
+    # plt.imshow(img)
+    # plt.show()
+       
+    # Resize: order 0 for binary images 
+    im = resize(img, output_shape=(patch_size,patch_size), 
+                order=0, 
+                anti_aliasing=False)
+    # plt.imshow(im)
+    # plt.show()
+    return(im)
+
 def object_extraction(image, image_labels, patch_size=28):
     # Initialize objects 
     objects_centroids = []
     objects_patches = []
+    objects_binary_patches = []
     objects_type = []
     # Get object labels 
     labels = np.unique(image_labels)
@@ -158,15 +209,22 @@ def object_extraction(image, image_labels, patch_size=28):
         if b_r < 1.2:  # black
             object_type = 'DIGIT'
         objects_type.append(object_type)
-        #%% Resize the image patch 
-        im = resize(im, output_shape=(patch_size,patch_size))
-        objects_patches.append(im) 
+        #%% Rescale the patch
+        im_patch = resize(im, output_shape=(patch_size,patch_size), 
+                          order=3, 
+                          anti_aliasing=True)
+        objects_patches.append(im_patch) 
+        #%% Process the original patch and get the binary patch rescaled
+        im = process_object_patch(im, patch_size=patch_size)
+        objects_binary_patches.append(im) 
     #-------------------------------------------------------------------------.
     objects_centroids = np.asarray(objects_centroids)
     objects_patches = np.asarray(objects_patches)
+    objects_binary_patches = np.asarray(objects_binary_patches)
     # Create a dictionary   
     obj_dict = {'centroids': objects_centroids,
                 'patches': objects_patches,
+                'binary_patches': objects_binary_patches,
                 'type': objects_type}
     return obj_dict
 
@@ -174,12 +232,14 @@ def object_extraction(image, image_labels, patch_size=28):
 def image_thresholding(images, threshold=0.5, invert=False):
     # invert=False --> below threshold set to 1, above threshold set to 0 
     # invert=True --> below threshold set to 0, above threshold set to 1
+    if (images.ndim == 2):
+        images = np.expand_dims(images, axis=0)
     if (images.ndim == 3):
         images = np.expand_dims(images, axis=3)
     if invert is False:
-        binary_images = images[:,:,:,0] < threshold   
+         binary_images = images[:,:,:,0] >= threshold   
     else:
-        binary_images = images[:,:,:,0] > threshold   
+         binary_images = images[:,:,:,0] <= threshold   
     binary_images = binary_images.astype(np.uint8) 
     return(binary_images)
   
@@ -229,7 +289,8 @@ def add_minus_sign(obj_dict):
     return(obj_dict)
 
 #%% Data Augmentation of Operators
-def DataAugmentation(images, labels, n, subset_labels=None, rotation=False, include_original=False, plot=False):
+def DataAugmentation(images, labels, n, subset_labels=None,  
+                     rotation=False, include_original=False, plot=False):
     #%% Check image is rank 4 for compatibility with datagen.flow
     if (images.ndim == 3):
         images = np.expand_dims(images, axis=3)
@@ -248,11 +309,11 @@ def DataAugmentation(images, labels, n, subset_labels=None, rotation=False, incl
     datagen = ImageDataGenerator(
         featurewise_center=False,
         featurewise_std_normalization=False,
-        rotation_range=rotation_range,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
+        rotation_range = rotation_range,
+        width_shift_range = 5,  # pixel shifts
+        height_shift_range = 3, # pixel shifts
         horizontal_flip=False,
-        zoom_range=0.2)
+        zoom_range=0.3)
     #%% Create the iterator
     datagen_iter = datagen.flow(x=images,y=np.asarray(labels),batch_size=batch_size)
     #%% Initialize 
@@ -281,7 +342,7 @@ def DataAugmentation(images, labels, n, subset_labels=None, rotation=False, incl
     else:
         images = feature_aug
         labels = feature_aug_label
-    images = image_thresholding(images, 0.3)     
+    images = image_thresholding(images, 0.3, invert=False)     
     images = np.expand_dims(np.asarray(images), axis=3)     
     return images, labels 
 
@@ -291,7 +352,7 @@ def load_mnist_data():
     labels = np.concatenate((trainY,testY), axis=0)
     images = images.astype('float32')
     images = images / 255.0
-    images = image_thresholding(images, 0.3, invert=True)
+    images = image_thresholding(images, 0.3, invert=False)
     images = np.expand_dims(np.asarray(images), axis=3)
     return images, labels
 

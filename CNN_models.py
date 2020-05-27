@@ -87,7 +87,7 @@ def CNN4(n_class):
     cnn4.add(Dense(n_class, activation='softmax'))
     
     cnn4.compile(loss=keras.losses.categorical_crossentropy,
-                 optimizer=keras.optimizers.Adam(),
+                 optimizer=keras.optimizers.Adam(lr=1e-3),
                  metrics=['accuracy'])
     return(cnn4)
 
@@ -154,7 +154,8 @@ def plot_learning_curve(training,
     return None
   
 # %% Plot for confusion matrix 
-def plot_confusion_matrix(y_true, y_pred, classes,
+def plot_confusion_matrix(ax,
+                          y_true, y_pred, classes,
                           normalize=False,
                           title=None,
                           cmap=plt.cm.Blues,
@@ -184,7 +185,6 @@ def plot_confusion_matrix(y_true, y_pred, classes,
     if verbose is True:
         print(cm)
     #%% Create the figure 
-    fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
     ax.figure.colorbar(im, ax=ax)
     # We want to show all ticks...
@@ -208,11 +208,7 @@ def plot_confusion_matrix(y_true, y_pred, classes,
             ax.text(j, i, format(cm[i, j], fmt),
                     ha="center", va="center",
                     color="white" if cm[i, j] > thresh else "black")
-    fig.tight_layout()
+    # fig.tight_layout()
     # plt.xlim(-0.5, len(np.unique(y))-0.5)
     # plt.ylim(len(np.unique(y))-0.5, -0.5)
     return ax
-
-
-    
-    
